@@ -27,7 +27,7 @@ module tx_block(
     if (tx && clk_en && counter < CLK_COUNT) begin
       txdata    <= txdata >> 1;
       counter   <= counter + 1'b1;
-    end else begin
+    end else if (counter == CLK_COUNT) begin
       done      <= 1'b1;
       tx        <= '0;
     end
