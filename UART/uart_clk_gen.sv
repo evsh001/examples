@@ -16,16 +16,9 @@ module uart_clk_gen
   localparam CLK_COUNT = int'((CLK_FREQ*1000000)/(BAUD_RATE));
   logic [$clog2(CLK_COUNT)-1:0]      clk_counter;
   
-  
-  tx_block u_tx_block
-  (
-    .clk                 (clk), 
-    .clk_en              (clk_en)
-  );
 
   always_ff @( posedge clk ) begin
     clk_en        <= '0;
-
     if (clk_counter == CLK_COUNT - 1) begin
       clk_counter <= '0;
       clk_en    <= ~clk_en;
