@@ -33,7 +33,7 @@ module uart_top
   
   always @(posedge clk) begin
     start <= 0;
-	if (&counter)
+    if (&counter)
       start <= 1'b1;
     else
       counter <= counter + 1;
