@@ -14,10 +14,14 @@ module uart_clk_gen
  );
   
   localparam CLK_COUNT = int'((CLK_FREQ*1000000)/(BAUD_RATE));
+  //localparam CLK_COUNT = int'(12);     // TESTBENCH
   logic [$clog2(CLK_COUNT)-1:0]      clk_counter;
   
-
-  always_ff @( posedge clk ) begin
+  initial begin
+    clk_counter = '0;
+  end
+  
+  always @(posedge clk) begin
     clk_en        <= '0;
     if (clk_counter == CLK_COUNT - 1) begin
       clk_counter <= '0;
