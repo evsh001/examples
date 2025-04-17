@@ -79,6 +79,7 @@ module sinc3
   Perform the differentiation stage (FIR) at a lower speed.
   Z = one sample delay WORD_mclk1 = output word rate */
   always @(posedge word_mclk1, posedge reset) begin
+    DATA <= diff3[20:5];
     if(reset) begin
       acc3_d2 <= 22'd0;
       diff1_d <= 22'd0;
@@ -117,9 +118,6 @@ module sinc3
     endcase
   end */
   
-    
-  always @( posedge word_mclk1 ) begin
-    DATA <= diff3[20:5];
   
   /* Synchronize Data Output
   always@ ( posedge mclk1, posedge reset ) begin
