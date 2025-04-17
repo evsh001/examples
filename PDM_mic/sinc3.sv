@@ -53,7 +53,7 @@ module sinc3
   end
   
   /*decimation stage (Mmclk1OUT/WORD_mclk1) */
-  always @ posedge mclk1, posedge reset) begin
+  always @(posedge mclk1, posedge reset) begin
     if (reset)
       word_count <= 16'd0;
     else begin
@@ -118,7 +118,7 @@ module sinc3
   end */
   
     
-  always @ ( posedge word_mclk1 ) begin
+  always @( posedge word_mclk1 ) begin
     DATA <= diff3[20:5];
   
   /* Synchronize Data Output
@@ -138,7 +138,7 @@ module sinc3
     end
   end */
   
-  always@ ( posedge mclk1, posedge reset ) begin
+  always @( posedge mclk1, posedge reset ) begin
     if ( reset ) begin
       data_en <= 1'b0;
     end else begin
