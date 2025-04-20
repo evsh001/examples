@@ -156,3 +156,35 @@ module top_pdm
    
 endmodule
 
+
+module clk_pdm
+  #
+  (
+   parameter          CLK_FREQ    = 44,     // Mhz
+   parameter          SAMPLE_RATE = 2750000 // Hz
+   )
+  (
+   input  wire         clk,    // 44Mhz  
+   output logic        m_clk,  // Microphone clock
+   output logic        m_clk1
+   );
+
+  localparam CLK_COUNT = int'((CLK_FREQ*1000000)/(SAMPLE_RATE*2));
+  logic [$clog2(CLK_COUNT)-1:0]      clk_counter;
+
+  initial begin
+    m_clk           = '0;
+    m_clk1          = '0;
+    clk_counter     = '0;
+  end
+
+  always @(posedge clk) begin
+    if (clk_counter == CLK_COUNT - 1) begin
+      clk_counter <= '0;
+      m_clk       <= ~m_clk;
+      m_clk1      <= ~m_clk1;
+    end else
+      clk_counter <= clk_counter + 1;
+  end
+
+endmodule
