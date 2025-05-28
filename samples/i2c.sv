@@ -13,44 +13,40 @@ module i2c_temp
    );
 
   localparam TIME_1SEC   = int'(INTERVAL/CLK_PER); // Clock ticks in 1 sec
-  localparam TIME_TFALL  = int'(300/CLK_PER);
+  localparam TIME_TFALL  = int'(100/CLK_PER);
   localparam TIME_TRISE  = int'(300/CLK_PER);
   localparam TIME_THDSTA = int'(600/CLK_PER);
   localparam TIME_TSUSTA = int'(600/CLK_PER);
   localparam TIME_THIGH  = int'(600/CLK_PER);
   localparam TIME_TLOW   = int'(1300/CLK_PER);
-  localparam TIME_TSUDAT = int'(120/CLK_PER);
-  localparam TIME_THDDAT = int'(30/CLK_PER);
+  localparam TIME_TSUDAT = int'(400/CLK_PER);
+  //localparam TIME_THDDAT = int'(30/CLK_PER);
   localparam TIME_TSUSTO = int'(600/CLK_PER);
   
   localparam I2C_ADDR = 7'b1000000; // 0x40
-  localparam I2CBITS = 1 + // start
-                       7 + // 7 bits for address
-                       1 + // 1 bit for read
-                       1 + // 1 bit for ack back
-                       8 + // 8 bits upper data
-                       1 + // 1 bit for ack
-                       8 + // 8 bits lower data
-                       1 + // 1 bit for ack
-                       1;  // 1 bit for stop
+  localparam I2CBITS  = 47; // Hold Master communication sequence without CRC
 
   logic               sda_en;
   logic               scl_en;
-  logic               convert;
+  logic               measure_done;
   logic [15:0]        i2c_data;
+  logic               scl_release;
+  logic               r_start;
 
   assign SCL = scl_en ? 'z : '0;
   assign SDA = sda_en ? 'z : '0;
 
-  typedef enum bit [2:0]
+  typedef enum bit [3:0]
                {
                 IDLE,
                 START,
                 TLOW,
-                TSU,
+                TDATSU
                 THIGH,
-                THD,
-                TSTO
+                TDATHD
+                WAIT,
+                RSTART,
+                STOP
                 } i2c_t;
 
   i2c_s I2C_State;
@@ -59,9 +55,10 @@ module i2c_temp
   always @(posedge clk) begin
     scl_en                     <= '1;
     if (counter_reset) counter <= '0;
-    else counter <= counter + 1'b1;
+    else counter  <= counter + 1'b1;
     counter_reset <= '0;
-    convert       <= '0;
+    measure_done  <= '0;
+    scl_release   <= (SCL) ? '1 : '0;
 
     case (I2C_State)
       IDLE: begin
@@ -94,7 +91,15 @@ module i2c_temp
         scl_en          <= '0; // Drop the clock
         if (counter == TIME_TSUDAT) begin
           counter_reset <= '1;
-          I2C_State     <= THIGH;
+          if (bit_count == 19) begin
+            r_start     <= '1;
+            I2C_State   <= THIGH;  
+          end else if (bit_count == 30)
+            I2C_State   <= WAIT;
+          else if (bit_count == 48)
+            I2C_State   <= STOP;
+          else 
+            I2C_State   <= THIGH;       
         end
       end
       THIGH: begin
@@ -102,23 +107,20 @@ module i2c_temp
         if (counter == TIME_TRISE + TIME_THIGH) begin
           if (capture_en) i2c_data <= i2c_data << 1 | SDA;
           counter_reset <= '1;
-          I2C_State     <= THD;
+          I2C_State     <= TLOW;
+          if (r_start)
+            I2C_State   <= START;
+            r_start     <= '0;
+            bit_count   <= bit_count + 1'b1;
         end
       end
-      THD: begin
-        if (bit_count == I2CBITS-1) begin
-          scl_en      <= '1; // Keep the clock high
-        end else begin
-          scl_en      <= '0; // Drop the clock
-        end
-        if (counter == TIME_THDDAT) begin
-          counter_reset <= '1;
-          I2C_State     <= (bit_count == I2CBITS-1) ? TSTO : TLOW;
-        end
-      end
-      TSTO: begin
+      WAIT: begin
+        I2C_State <= (scl_release) ? TLOW : WAIT 
+        counter_reset <= '1; 
+      end             
+      STOP: begin
         if (counter == TIME_TSUSTO) begin
-          convert       <= '1;
+          measure_done  <= '1;
           counter_reset <= '1;
           I2C_State     <= IDLE;
         end
