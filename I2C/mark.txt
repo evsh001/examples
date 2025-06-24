@@ -3,6 +3,8 @@ localparam RS = 19
 localparam MESURE = 29
 and so on
 
+
+scl_release - really needs it?
 ######################################
 line 135
 if (bit_count == 19) begin           
