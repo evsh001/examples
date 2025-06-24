@@ -1,0 +1,40 @@
+change digit to parametr 
+localparam RS = 19
+localparam MESURE = 29
+and so on
+
+line 135
+if (bit_count == 19) begin           
+  r_start     <= '1;
+  
+if (bit_count == 48)            
+  I2C_State   <= STOP;
+else 
+  I2C_State   <= THIGH;  
+  
+
+line 178 add comment ==  master starts to send address + write bit  
+line 145 no need
+
+
+localparam I2CBITS = 1 + // start 
+                     7 + // I2C address   (bit_count == 1)
+                     1 + // write
+                     1 + // ACK
+                     8 + // command       (bit_count == 10)       
+                     1 + // ACK
+                     1 + // start repeat  (bit_count == 19)
+                     7 + // I2C address   (bit_count == 20)
+                     1 + // read 
+                     1 + // ACK
+                     1 + // measurement     (bit_count == 29)
+                     8 + // data upper byte (bit_count == 30)
+					 1 + // ACK master      (bit_count == 38)
+                     8 + // data lower byte (bit_count == 39)
+					 1 + // NACK master no CRC 
+					 1;  // stop            (bit_count == 48)
+					 
+					 
+На счетчике == 18 слаев посылает ACK далее начинается RS но линию SDA отпускает слейв следом за ACK
+и если здесь не сработает, то нужно добаивть еще одно условие что если (State == TLOW and bit_count == 18)
+то опустить линию SDA.
