@@ -3,6 +3,7 @@ localparam RS = 19
 localparam MESURE = 29
 and so on
 
+######################################
 line 135
 if (bit_count == 19) begin           
   r_start     <= '1;
@@ -11,11 +12,18 @@ if (bit_count == 48)
   I2C_State   <= STOP;
 else 
   I2C_State   <= THIGH;  
+
+if (bit_count == 19) begin                    // start repeat
+            r_start     <= '1;
+            I2C_State   <= THIGH;   
+          end else if (bit_count == 48)                 // stop
+            I2C_State   <= STOP;
+          else 
+            I2C_State   <= THIGH;       
+        end
+
+########################################3
   
-
-line 178 add comment ==  master starts to send address + write bit  
-line 145 no need
-
 
 localparam I2CBITS = 1 + // start 
                      7 + // I2C address   (bit_count == 1)
