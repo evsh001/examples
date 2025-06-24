@@ -32,7 +32,24 @@ module i2c_master
   localparam I2C_ADDR = 7'b1000000; // 0x40
   localparam I2C_COMM_TEMP = 8'hE3;    // Temperature  
   localparam I2C_COMM_HUMI = 8'hE5;    // Humidity
-  localparam I2CBITS  = 49; // Hold Master communication sequence without CRC
+  // I2CBITS = 49  -  Hold Master communication sequence without CRC
+  localparam I2CBITS  = 1 + // start 
+                        7 + // I2C address   (bit_count == 1)
+                        1 + // write
+                        1 + // ACK
+                        8 + // command       (bit_count == 10)       
+                        1 + // ACK
+                        1 + // start repeat  (bit_count == 19)
+                        7 + // I2C address   (bit_count == 20)
+                        1 + // read 
+                        1 + // ACK
+                        1 + // measurement     (bit_count == 29)
+                        8 + // data upper byte (bit_count == 30)
+					    1 + // ACK master      (bit_count == 38)
+                        8 + // data lower byte (bit_count == 39)
+					    1 + // NACK master no CRC 
+					    1;  // stop            (bit_count == 48)
+  
 
   logic               sda_en;
   logic               scl_en;
@@ -46,7 +63,6 @@ module i2c_master
   logic               counter_reset;
   logic [$clog2(TIME_1SEC)-1:0]  counter;
   logic [$clog2(I2CBITS)-1:0]    bit_count;
-  //logic [$clog2(I2CBITS)-1:0]  bit_index;
 
   typedef enum bit [3:0]
                {
@@ -79,8 +95,6 @@ module i2c_master
   assign SCL = scl_en ? 'z : '0;
   assign SDA = sda_en ? 'z : '0;
 
-  //assign bit_index = bit_count == I2CBITS ? '0 : I2CBITS - bit_count - 1;
-  //assign capture_en = i2c_capt[bit_index];
 
   always @(posedge clk) begin
     scl_en                     <= '1;
@@ -95,30 +109,23 @@ module i2c_master
 
     case (I2C_State)
       IDLE: begin
-        //sda_en    <= '1; // Force to 1 in the beginning.
         bit_count <= '0;
-        //i2c_data  <= {1'b0, I2C_ADDR, 1'b1, 1'b0, 8'b00, 1'b0, 8'b00, 1'b1, 1'b0};
-        //i2c_en    <= {1'b1, 7'h7F,    1'b1, 1'b0, 8'b00, 1'b1, 8'b00, 1'b1, 1'b1};
-        //i2c_capt  <= {1'b0, 7'h00,    1'b0, 1'b0, 8'hFF, 1'b0, 8'hFF, 1'b0, 1'b0};
-
         if (counter == TIME_1SEC) begin
           temp_hum      <= ~temp_hum;
           i2c_data      <= '0;
           counter_reset <= '1;
-          //sda_en        <= '0;    // Drop the data
           I2C_State     <= START;
         end
       end
       START:
-        //sda_en <= '0; // Drop the data
         // Hold clock low for thd:sta
         if (counter == TIME_THDSTA) begin
           counter_reset   <= '1;
-          scl_en          <= '0; // Drop the clock
+          scl_en          <= '0;    // Drop the clock
           I2C_State       <= TLOW;
         end
       TLOW: begin
-        scl_en          <= '0; // Drop the clock
+        scl_en          <= '0;     // Drop the clock
         if (counter == TIME_TFALL + TIME_TLOW - TIME_TSUDAT) begin
           bit_count     <= bit_count + 1'b1;
           counter_reset <= '1;
@@ -142,7 +149,6 @@ module i2c_master
         end
       end
       THIGH: begin
-        scl_en          <= '1; // Raise the clock
         if (counter == TIME_TRISE + TIME_THIGH) begin
           if (capture_en) i2c_data <= i2c_data << 1 | SDA;
           counter_reset <= '1;
@@ -175,16 +181,16 @@ module i2c_master
       sda_en     <= reg_send[7-bit_index];
     else if (I2C_State == START)
       sda_en  <= '0;
-    else if (bit_count == 1) begin                         // master send i2c address + write bit
+    else if (bit_count == 1) begin                         // master starts send i2c address + write bit
       send_en    <= '1;
       reg_send   <= {I2C_ADDR, 1'b0};
-    end else if (bit_count == 10) begin                    // master send i2c command
+    end else if (bit_count == 10) begin                    // master starts send i2c command
       send_en    <= '1;
       reg_send   <= temp_hum ? I2C_COMM_HUMI : I2C_COMM_TEMP;
-    end else if (bit_count == 20) begin                    // master send i2c address + read bit
+    end else if (bit_count == 20) begin                    // master starts send i2c address + read bit
       send_en    <= '1;
       reg_send   <= {I2C_ADDR, 1'b1};
-    end else if (bit_count == 30 || bit_count == 39) begin      // reacive data from slave
+    end else if (bit_count == 30 || bit_count == 39) begin    // receive data from slave
       capture_en <= '1;
       sda_en     <= '1;
     end else if (bit_count == 48 || bit_count == 38 || bit_count == 0)           // 38 master ACK, 0 after start before TDATSTU, and STOP
