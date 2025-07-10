@@ -1,4 +1,4 @@
-`timescale 1ns / 1ps
+`timescale 1ns / 10ps
 //////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////
 
@@ -6,95 +6,117 @@
 module top_pdm
   #
   (
-   parameter RAM_SIZE = 131072,
-   parameter CLK_FREQ = 44
+   parameter RAM_SIZE   = 65536,
+   parameter CLK_FREQ   = 44,
+   parameter DATA_WIDTH = 16
    )
   (
    input wire          clk, // 44 Mhz clock
 
    // Microphone interface
-   output logic        m_clk,
-   output logic        m_lr_sel,
    input wire          m_data,
-
+   output logic        m_clk,
+   //output logic        m_lr_sel,
+   
    // Pushbutton interface
    input logic         BTNW,
-   input logic         BTNR,
+   input logic         BTNT,
+   input logic         BTNI2S,
    //input logic         reset,
-
-   // LED Array
-   output logic [3:0] LED,
    
-   // Audio output
-   output logic [7:0] audio_out
+   // LED array
+   output logic [3:0]  LED, 
+    
+   // UART output
+   output logic        tx_out,
+   
+   // Audio I2S interface
+   output logic        lr_clk,
+   output logic        b_clk,
+   output logic        i2s_out
    );
    
-  logic [7:0]          amplitude;
-  logic                amplitude_valid;
+  logic [DATA_WIDTH-1:0]       amplitude;
+  logic                        amplitude_valid;
 
-  logic [2:0]          button_wsync;
-  logic [2:0]          button_rsync;
-  logic                start_capture;
-  logic                m_clk1;
-  logic                data_en;
-  logic                amp_flag_en;
-  
-  
+  logic [2:0]                  button_wsync;
+  logic [2:0]                  button_tsync;
+  logic [2:0]                  button_isync;
+  logic                        start_capture;
+  logic                        start_transmit;
+  logic                        start_i2s;
+  logic [7:0]                  uart_data;
+  logic [1:0]                  byte_index;  // for uart 
+  logic                        inc_mem;
 
-  assign m_lr_sel = '0;
 
-
-  clk_pdm u_clk_pdm(
-     .clk                  (clk),        // 2.75 Mhz
-     .m_clk                (m_clk),
-     .m_clk1               (m_clk1)
-   );
-   
-  sinc3 u_sinc3
-    (
-     //.reset               (reset),
-     .mclk1               (m_clk1),
-     .mdata1              (m_data),
-     .DATA                (amplitude),
-     .data_en             (data_en)
-     );
-     
-     
+ 
    // Capture RAM
-  logic [7:0]                  amplitude_store[RAM_SIZE];
-  logic                        start_playback;
+  logic [DATA_WIDTH-1:0]       amplitude_store[RAM_SIZE];
   logic [$clog2(RAM_SIZE)-1:0] ram_wraddr;
   logic [$clog2(RAM_SIZE)-1:0] ram_rdaddr;
   logic                        ram_we;
-  logic [7:0]                  ram_dout;
+  logic [1:0][7:0]             ram_dout;
   logic [3:0]                  clr_led;
   logic                        led_on;
+  logic                        tx_busy;
+  logic                        tx_done;
+  logic                        tx_start;
+  logic                        dump_cycle;
   
+  sinc3 u_sinc3
+    (
+     //.reset               (reset),
+     .clk                 (clk),
+     .pdm_in              (m_data),
+     .m_clk               (m_clk),
+     .data_out            (amplitude),
+     .data_valid          (amplitude_valid)
+     );
+  
+  uart_tx_block u_uart_tx_block
+    (
+     .clk                 (clk),
+     .data                (uart_data),
+     .tx_start            (tx_start),
+     .tx_done             (tx_done),
+     .tx_busy             (tx_busy),
+     .tx_out              (tx_out)
+    );
+    
+  i2s u_i2s
+    (
+     .clk                 (clk),
+     .sample              (ram_dout),
+     .start               (start_i2s),
+     .lr_clk              (lr_clk),
+     .b_clk               (b_clk),
+     .i2s_out             (i2s_out),
+     .inc_mem             (inc_mem)
+     );
    
   initial begin
     ram_rdaddr     = '0;
     ram_wraddr     = '0;
     ram_we         = '0;
     start_capture  = '0;
-    start_playback = '0;
+    start_transmit = '0;
+    start_i2s      = '0;
     LED            = '0;
     clr_led        = '0;
     led_on         = '0;
-    data_en        = '0;
-    amp_flag_en    = '0;
-    
+    byte_index     = '0;  
   end
+  
+  // Memory initialization for testbench
+//  initial amplitude_store = '{0:16'hC2A3, 1:16'h43F5, 2:16'h7788, default: '0};
 
+    // Memory operations block
   always @(posedge clk) begin
-    amplitude_valid <= '0;
-    if (data_en && ~amp_flag_en) begin
-      amplitude_valid <= 1'b1;
-      amp_flag_en     <= 1'b1;
-    end
-    if (~data_en)
-      amp_flag_en <= '0;
+    if (ram_we) amplitude_store[ram_wraddr] <= amplitude;
+    ram_dout <= amplitude_store[ram_rdaddr];
   end
-
+  
    // Capture the Audio data
   always @(posedge clk) begin
     button_wsync <= button_wsync << 1 | BTNW;
@@ -108,83 +130,67 @@ module top_pdm
       LED <= '1;
 
     if (button_wsync[2:1] == 2'b01) begin
-      start_capture <= '1;
-      LED           <= '0;
+      start_capture   <= '1;
+      LED             <= '0;
     end else if (start_capture && amplitude_valid) begin
       LED[ram_wraddr[$clog2(RAM_SIZE)-1:$clog2(RAM_SIZE)-2]] <= '1;
-      ram_we                      <= '1;
-      ram_wraddr                  <= ram_wraddr + 1'b1;
+      ram_we          <= '1;
+      ram_wraddr      <= ram_wraddr + 1'b1;
       if (&ram_wraddr) begin
         start_capture <= '0;
         ram_wraddr    <= '0;
       end
     end
   end
-  
-  // Memory operations block
-  always @(posedge clk) begin
-    if (ram_we) amplitude_store[ram_wraddr] <= amplitude;
-    ram_dout <= amplitude_store[ram_rdaddr];
-  end
-   
-  // For LED turn off while reading
+    
+  // For LED turn off while transmitting
   logic [1:0] clr_addr;
   assign clr_addr = ~ram_rdaddr[$clog2(RAM_SIZE)-1:$clog2(RAM_SIZE)-2];
   
-  // Playback Audio
+// Send Audio via uart / I2S
   always @(posedge clk) begin
-    button_rsync <= button_rsync << 1 | BTNR;
-    clr_led      <= '0;
-    led_on       <= '0;
-    
-    if (button_rsync[2:1] == 2'b01) begin
-      start_playback <= '1;
-      led_on         <= '1;
-    end else if (start_playback && amplitude_valid) begin
-      clr_led[clr_addr] <= '1;
-      ram_rdaddr                  <= ram_rdaddr + 1'b1;
-      if (&ram_rdaddr) begin
-        start_playback <= '0;
-        ram_rdaddr     <= '0;
+    button_tsync   <= button_tsync << 1 | BTNT;
+    tx_start       <= '0;
+	clr_led        <= '0;
+	led_on         <= '0;
+	dump_cycle     <= '0;
+	start_transmit <= dump_cycle;
+    	
+    if (button_tsync[2:1] == 2'b01) begin
+      dump_cycle          <= '1;
+	  led_on              <= '1;
+    end else if (start_transmit && ~tx_busy) begin
+      tx_start            <= '1;
+	  uart_data           <= ram_dout[byte_index];
+	  byte_index          <= byte_index + 1;
+    end else if (tx_done) begin
+      dump_cycle          <= '1;      
+      if (byte_index == 2'b10) begin
+		byte_index        <= '0;
+		ram_rdaddr        <= ram_rdaddr + 1;
+		clr_led[clr_addr] <= '1;
+	    if (&ram_rdaddr) begin
+          ram_rdaddr      <= '0;
+          dump_cycle      <= '0;
+        end
       end
-    end
+    end  
+  
+  // Send Audio to I2S interface
+    button_isync   <= button_isync << 1 | BTNI2S;
+    
+    if (button_isync[2:1] == 2'b01)
+      start_i2s  <= '1;
+    
+    if (inc_mem)
+      ram_rdaddr <= ram_rdaddr + 1;
+    
+    if (&ram_rdaddr) begin
+      ram_rdaddr <= '0;
+      start_i2s  <= '0;
+    end      
   end
   
-   
-  assign audio_out = start_playback ? ram_dout : 'z; 
-
-   
-endmodule
-
-
-module clk_pdm
-  #
-  (
-   parameter          CLK_FREQ    = 44,     // Mhz
-   parameter          SAMPLE_RATE = 2750000 // Hz
-   )
-  (
-   input  wire         clk,    // 44Mhz  
-   output logic        m_clk,  // Microphone clock
-   output logic        m_clk1
-   );
-
-  localparam CLK_COUNT = int'((CLK_FREQ*1000000)/(SAMPLE_RATE*2));
-  logic [$clog2(CLK_COUNT)-1:0]      clk_counter;
-
-  initial begin
-    m_clk           = '0;
-    m_clk1          = '0;
-    clk_counter     = '0;
-  end
-
-  always @(posedge clk) begin
-    if (clk_counter == CLK_COUNT - 1) begin
-      clk_counter <= '0;
-      m_clk       <= ~m_clk;
-      m_clk1      <= ~m_clk1;
-    end else
-      clk_counter <= clk_counter + 1;
-  end
-
+//  assign audio_out = start_playback ? ram_dout : 'z; 
+  
 endmodule
