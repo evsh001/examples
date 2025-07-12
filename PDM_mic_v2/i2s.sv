@@ -25,7 +25,7 @@ module i2s
   s_state State;
 
 //  localparam LRCLK  = int'(CLK_FREQ/(SAMPLE_RATE));
-  localparam BCLK   = int'(CLK_FREQ/(SAMPLE_RATE*DATA_WIDTH));
+   localparam BCLK   = int'(CLK_FREQ/(2*SAMPLE_RATE*2*DATA_WIDTH));
 
   logic [$clog2(2*DATA_WIDTH):0]  lr_count;
   logic [$clog2(BCLK)-1:0]        bit_count;
@@ -46,7 +46,7 @@ module i2s
   always @(posedge clk) begin
     lr_en       <= '1;
        
-    if (bit_count == BCLK/2 - 1) begin
+    if (bit_count == BCLK - 1) begin
       b_clk     <= ~b_clk;
       lr_en     <= ~b_clk;
       bit_count <= '0;
